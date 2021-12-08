@@ -31,7 +31,7 @@ func ScheduleMessage(sendTime time.Time, message string) error {
 	sendTimeUtc := sendTime.UTC()
 	fileName := timeStringToFileName(sendTimeUtc.Format(timeFormat))
 
-	fp, err := os.Create(filepath.Join(sendFileDir, fileName+".txt"))
+	fp, err := os.Create(filepath.Join(sendFileDir, fileName))
 	if err != nil {
 		fmt.Println("Could not create file:", err)
 		return err
@@ -113,7 +113,7 @@ func stringToTime(s string) (time.Time, error) {
 }
 
 func timeStringToFileName(s string) string {
-	return s + "_" + uuid.New().String()
+	return s + "_" + uuid.New().String() + ".txt"
 }
 
 func timeStringFromFileName(fileName string) (string, error) {
