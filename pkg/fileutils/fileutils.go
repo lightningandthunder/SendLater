@@ -20,14 +20,16 @@ const sendFileDir = "sendfiles"
 func init() {
 	err := os.MkdirAll(sendFileDir, os.ModePerm)
 	if err != nil {
-		panic("Unable to create send file directory: " + err.Error())
+		panic("Unable to create send file directory:" + err.Error())
 	}
 }
 
-// Todo - convert to UTC
-// Todo - see if we can get local time from discord message
-func SaveToFile(sendTime time.Time, message string) error {
-	fileName := timeStringToFileName(sendTime.Format(timeFormat))
+// Record a desired send timestamp and a message to send.
+// Returns an error if something went wrong, or nil if it went right.
+func ScheduleMessage(sendTime time.Time, message string) error {
+	// Todo - see if we can get local time from discord message
+	sendTimeUtc := sendTime.UTC()
+	fileName := timeStringToFileName(sendTimeUtc.Format(timeFormat))
 
 	fp, err := os.Create(filepath.Join(sendFileDir, fileName+".txt"))
 	if err != nil {
@@ -41,6 +43,52 @@ func SaveToFile(sendTime time.Time, message string) error {
 	}
 
 	return nil
+}
+
+// Review and send all scheduled messages whose schedule timestamps are in the past.
+// Returns number of messages sent, number of failed messages, and the most recent internal error received.
+func SendPendingMessages() (filesSent int, filesErrored int, err error) {
+	files, err := ioutil.ReadDir(sendFileDir)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	// Channels to keep track of concurrent message processing
+	// This is probably not necessary, but I gotta practice using goroutines somehow!
+	messagesSent := make(chan bool, len(files))
+	messagesErrored := make(chan bool, len(files))
+
+	defer close(messagesSent)
+	defer close(messagesErrored)
+
+	wg := sync.WaitGroup{}
+
+	nowUtc := time.Now().UTC()
+
+	for _, info := range files {
+		timeString, err := timeStringFromFileName(info.Name())
+		if err != nil {
+			fmt.Println("Error while parsing time from file name:", err)
+			messagesErrored <- true
+			continue
+		}
+
+		t, err := stringToTime(timeString)
+		if err != nil {
+			fmt.Println("Error while parsing time from file name:", err)
+			messagesErrored <- true
+			continue
+		}
+
+		if t.Sub(nowUtc) < 0 {
+			wg.Add(1)
+			go sendFileContentsAsDiscordMessage(info.Name(), messagesSent, messagesErrored, &wg)
+		}
+
+	}
+	wg.Wait()
+
+	return len(messagesSent), len(messagesErrored), err
 }
 
 func readMessageFromFile(fileName string) (string, error) {
@@ -79,7 +127,9 @@ func timeStringFromFileName(fileName string) (string, error) {
 func sendFileContentsAsDiscordMessage(fileName string, messagesSent chan bool, messagesErrored chan bool, wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	message, err := readMessageFromFile(filepath.Join(sendFileDir, fileName))
+	fileFullPath := filepath.Join(sendFileDir, fileName)
+
+	message, err := readMessageFromFile(filepath.Join(fileFullPath))
 	if err != nil {
 		fmt.Println("Got an error in goroutine:", err)
 		messagesErrored <- true
@@ -89,47 +139,9 @@ func sendFileContentsAsDiscordMessage(fileName string, messagesSent chan bool, m
 	// TODO - send message to Discord
 	fmt.Println("Message:", message)
 	messagesSent <- true
-}
 
-// TODO - make sure comparisons are all done in UTC
-func SendPendingMessages() (filesSent int, filesErrored int, err error) {
-	files, err := ioutil.ReadDir(sendFileDir)
+	err = os.Remove(fileFullPath)
 	if err != nil {
-		return 0, 0, err
+		fmt.Println("Error removing sendfile...", err)
 	}
-
-	// Channels to keep track of concurrent message processing
-	// This is not necessary, but I gotta practice using goroutines somehow!
-	messagesSent := make(chan bool, len(files))
-	messagesErrored := make(chan bool, len(files))
-
-	defer close(messagesSent)
-	defer close(messagesErrored)
-
-	wg := sync.WaitGroup{}
-
-	for _, info := range files {
-		timeString, err := timeStringFromFileName(info.Name())
-		if err != nil {
-			fmt.Println("Error while parsing time from file name:", err)
-			messagesErrored <- true
-			continue
-		}
-
-		t, err := stringToTime(timeString)
-		if err != nil {
-			fmt.Println("Error while parsing time from file name:", err)
-			messagesErrored <- true
-			continue
-		}
-
-		if time.Until(t) < 0 {
-			wg.Add(1)
-			go sendFileContentsAsDiscordMessage(info.Name(), messagesSent, messagesErrored, &wg)
-		}
-
-	}
-	wg.Wait()
-
-	return len(messagesSent), len(messagesErrored), err
 }
