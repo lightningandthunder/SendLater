@@ -119,7 +119,7 @@ func timeStringToFileName(s string) string {
 func timeStringFromFileName(fileName string) (string, error) {
 	stringSlice := strings.Split(fileName, "_")
 	if len(stringSlice) != 2 {
-		return "", fmt.Errorf("Invalid file name:", fileName)
+		return "", fmt.Errorf("Invalid file name:" + fileName)
 	}
 	return stringSlice[0], nil
 }
