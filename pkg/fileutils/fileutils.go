@@ -66,26 +66,21 @@ func SendPendingMessages() (filesSent int, filesErrored int, err error) {
 	nowUtc := time.Now().UTC()
 
 	for _, info := range files {
-		timeString, err := timeStringFromFileName(info.Name())
+		t, err := timeFromFileName(info.Name())
 		if err != nil {
 			fmt.Println("Error while parsing time from file name:", err)
 			messagesErrored <- true
 			continue
 		}
 
-		t, err := stringToTime(timeString)
-		if err != nil {
-			fmt.Println("Error while parsing time from file name:", err)
-			messagesErrored <- true
-			continue
-		}
-
+		// If scheduled time is in the past, fire off a goroutine to send the message to Discord
 		if t.Sub(nowUtc) < 0 {
 			wg.Add(1)
 			go sendFileContentsAsDiscordMessage(info.Name(), messagesSent, messagesErrored, &wg)
 		}
 
 	}
+
 	wg.Wait()
 
 	return len(messagesSent), len(messagesErrored), err
@@ -116,6 +111,20 @@ func timeStringToFileName(s string) string {
 	return s + "_" + uuid.New().String() + ".txt"
 }
 
+func timeFromFileName(fileName string) (time.Time, error) {
+	timeString, err := timeStringFromFileName(fileName)
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	timeStruct, err := stringToTime(timeString)
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	return timeStruct, nil
+}
+
 func timeStringFromFileName(fileName string) (string, error) {
 	stringSlice := strings.Split(fileName, "_")
 	if len(stringSlice) != 2 {
@@ -129,7 +138,7 @@ func sendFileContentsAsDiscordMessage(fileName string, messagesSent chan bool, m
 
 	fileFullPath := filepath.Join(sendFileDir, fileName)
 
-	message, err := readMessageFromFile(filepath.Join(fileFullPath))
+	message, err := readMessageFromFile(fileFullPath)
 	if err != nil {
 		fmt.Println("Got an error in goroutine:", err)
 		messagesErrored <- true
