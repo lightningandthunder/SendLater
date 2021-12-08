@@ -1,4 +1,4 @@
-module sendLater
+module github.com/lightningandthunder/sendlater
 
 go 1.17
 
