@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -14,10 +15,10 @@ import (
 )
 
 const timeFormat = time.RFC3339
-const sendFileDir = "../sendfiles/"
+const sendFileDir = "sendfiles"
 
 func init() {
-	err := os.Mkdir(sendFileDir, os.ModeDir)
+	err := os.MkdirAll(sendFileDir, os.ModePerm)
 	if err != nil {
 		panic("Unable to create send file directory: " + err.Error())
 	}
@@ -28,12 +29,11 @@ func init() {
 func SaveToFile(sendTime time.Time, message string) error {
 	fileName := timeStringToFileName(sendTime.Format(timeFormat))
 
-	fp, err := os.Create(fileName + ".txt")
+	fp, err := os.Create(filepath.Join(sendFileDir, fileName+".txt"))
 	if err != nil {
 		fmt.Println("Could not create file:", err)
 		return err
 	}
-
 	_, err = fmt.Fprintln(fp, message)
 	if err != nil {
 		fmt.Println("Error writing to file:", err)
@@ -51,13 +51,13 @@ func readMessageFromFile(fileName string) (string, error) {
 	defer file.Close()
 
 	reader := bufio.NewReader(file)
-	buffer := make([]byte, 400)
-	for {
-		bytesWritten, err := io.ReadFull(reader, buffer)
-		if err == io.EOF {
-			return string(buffer[0:bytesWritten]), nil
-		}
+	bytes, err := io.ReadAll(reader)
+	if err != nil {
+		fmt.Println("Error reading message from file:", err)
+		return "", err
 	}
+
+	return string(bytes), nil
 }
 
 func stringToTime(s string) (time.Time, error) {
@@ -79,8 +79,9 @@ func timeStringFromFileName(fileName string) (string, error) {
 func sendFileContentsAsDiscordMessage(fileName string, messagesSent chan bool, messagesErrored chan bool, wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	message, err := readMessageFromFile(fileName)
+	message, err := readMessageFromFile(filepath.Join(sendFileDir, fileName))
 	if err != nil {
+		fmt.Println("Got an error in goroutine:", err)
 		messagesErrored <- true
 		return
 	}
@@ -123,6 +124,7 @@ func SendPendingMessages() (filesSent int, filesErrored int, err error) {
 		}
 
 		if time.Until(t) < 0 {
+			wg.Add(1)
 			go sendFileContentsAsDiscordMessage(info.Name(), messagesSent, messagesErrored, &wg)
 		}
 
