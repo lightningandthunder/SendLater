@@ -26,6 +26,9 @@ func main() {
 	go loopOnSendPendingMessages(session)
 
 	// Independently, loop forever on listening for DMs via websocket connection
-	discordutils.Listen()
+	err := discordutils.Listen()
+	if err != nil {
+		fmt.Println("Error while setting up bot:", err)
+	}
 
 }

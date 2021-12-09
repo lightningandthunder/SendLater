@@ -12,7 +12,7 @@ import (
 	"github.com/joho/godotenv"
 )
 
-const scheduleSignal = "signal"
+const scheduleSignal = "schedule"
 
 var discord *discordgo.Session
 var generalChatId string
@@ -30,7 +30,7 @@ func init() {
 
 	generalChatId = os.Getenv("GENERAL_CHAT_ID")
 
-	d, err := discordgo.New("Bot" + os.Getenv("BOT_TOKEN"))
+	d, err := discordgo.New("Bot " + os.Getenv("BOT_TOKEN"))
 	if err != nil {
 		fmt.Println("error creating Discord session,", err)
 		os.Exit(1)
@@ -40,6 +40,8 @@ func init() {
 	// Register handler function specifically for DMs to the bot
 	discord.AddHandler(handleMessage)
 	discord.Identify.Intents = discordgo.IntentsDirectMessages
+
+	fmt.Println("Discord session initialized.")
 }
 
 // A "constant" representing the channel ID for General Chat on our server
@@ -84,9 +86,17 @@ func Listen() error {
 }
 
 // Send a DM to a provided channel ID
-func SendDm(channelId, msg string) {
-	_, err := discord.ChannelMessageSend(
-		channelId,
+func sendDm(userId, msg string) {
+
+	dmChannel, err := discord.UserChannelCreate(userId)
+	if err != nil {
+		fmt.Println("Error while getting DM channel:", err)
+		return
+	}
+
+	fmt.Println("Sending a DM to:", userId)
+	_, err = discord.ChannelMessageSend(
+		dmChannel.ID,
 		msg,
 	)
 	if err != nil {
@@ -100,6 +110,7 @@ func SendDm(channelId, msg string) {
 // a provided timestamp.
 // A package-level callback needs to be passed in to avoid circular imports with the discordutils package.
 func handleMessage(session *discordgo.Session, msg *discordgo.MessageCreate) {
+	fmt.Println(msg.Author.ID)
 	// Ignore this bot's messages - not that this is likely to happen, but still.
 	if msg.Author.ID == session.State.User.ID {
 		fmt.Println("Somehow, the bot sent a message to itself:", msg.Content)
@@ -110,6 +121,8 @@ func handleMessage(session *discordgo.Session, msg *discordgo.MessageCreate) {
 	var parsedMessage string
 
 	messageParts := strings.Split(msg.Content, " ")
+
+	fmt.Println(messageParts)
 
 messageLoop:
 	for index, str := range messageParts {
@@ -122,9 +135,11 @@ messageLoop:
 		// Try to parse a date and time
 		case 1:
 			t, err := time.Parse(time.RFC3339, str)
+			fmt.Println("Parsed time:", t)
+			fmt.Println("Err from parsing time:", err)
 			if err != nil {
-				SendDm(
-					msg.ChannelID,
+				sendDm(
+					msg.Author.ID,
 					fmt.Sprintf("Error parsing your timestamp: %s", err)+
 						"\nPlease use RFC3339 date format; ex: 2019-10-12T14:20:50.52+07:00",
 				)
@@ -140,8 +155,8 @@ messageLoop:
 	// This callback function has to be set at the package level
 	err := callbackHandler(scheduleTime, parsedMessage)
 	if err != nil {
-		SendDm(
-			msg.ChannelID,
+		sendDm(
+			msg.Author.ID,
 			fmt.Sprintf("Error scheduling your message: %s", err),
 		)
 		return
