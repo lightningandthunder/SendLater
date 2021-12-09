@@ -5,7 +5,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"regexp"
+	"strings"
 	"syscall"
 	"time"
 
@@ -14,6 +14,7 @@ import (
 )
 
 const scheduleSignal = "signal"
+const generalChannelId = "TODO"
 
 func main() {
 	discord, err := discordgo.New("Bot " + "authentication token")
@@ -55,43 +56,63 @@ func main() {
 	fmt.Println("Main:", filesSent, filesErrored, err)
 }
 
-// This function will be called every time a new
-// message is created in a direct message with the bot.
+// This function will be called every time a DM is sent to the bot.
+// It parses the original message for key information and schedules the message for
+// a provided timestamp.
 func handleMessage(session *discordgo.Session, msg *discordgo.MessageCreate) {
-
-	// Ignore this bot's messages
+	// Ignore this bot's messages - not that this is likely to happen, but still.
 	if msg.Author.ID == session.State.User.ID {
+		fmt.Println("Somehow, the bot sent a message to itself:", msg.Content)
 		return
 	}
 
-	// Parse message content
-	containsSchedule, err := regexp.MatchString("^"+scheduleSignal, msg.Content)
-	if err != nil {
-		fmt.Println("Error with regex signal check:", err)
+	var scheduleTime time.Time
+	var parsedMessage string
+
+	messageParts := strings.Split(msg.Content, " ")
+
+messageLoop:
+	for index, str := range messageParts {
+		switch index {
+		// Skip messages that don't start with the signal
+		case 0:
+			if strings.ToLower(str) != scheduleSignal {
+				return
+			}
+		// Try to parse a date and time
+		case 1:
+			t, err := time.Parse(time.RFC3339, str)
+			if err != nil {
+				sendDm(
+					session,
+					msg.ChannelID,
+					fmt.Sprintf("Error parsing your timestamp: %s", err)+
+						"\nPlease use RFC3339 date format; ex: 2019-10-12T14:20:50.52+07:00",
+				)
+				return
+			}
+			scheduleTime = t
+		default:
+			parsedMessage = strings.Join(messageParts[2:], " ")
+			break messageLoop
+		}
 	}
 
-	// Skip messages that don't start with the signal
-	if !containsSchedule {
-		return
-	}
+	fileutils.ScheduleMessage(scheduleTime, parsedMessage)
 
-	// We create the private channel with the user who sent the message.
-	channel, err := session.UserChannelCreate(msg.Author.ID)
+	// TODO - What's the channel ID for our general chat?
+	channel, err := session.Channel(generalChannelId)
+
 	if err != nil {
-		// If an error occurred, we failed to create the channel.
-		//
-		// Some common causes are:
-		// 1. We don't share a server with the user (not possible here).
-		// 2. We opened enough DM channels quickly enough for Discord to
-		//    label us as abusing the endpoint, blocking us from opening
-		//    new ones.
-		fmt.Println("error creating channel:", err)
+		// If an error occurred, try to notify the user via DM.
+		// It's possible that we have sent too many DMs and Discord is throttling us.
 		session.ChannelMessageSend(
 			msg.ChannelID,
-			"Something went wrong while sending the DM!",
+			fmt.Sprintf("Error while trying to send your message: %s. It's possible that we're just overloading Discord; try again later.", err),
 		)
 		return
 	}
+
 	// Then we send the message through the channel we created.
 	_, err = session.ChannelMessageSend(channel.ID, "Pong!")
 	if err != nil {
@@ -106,5 +127,16 @@ func handleMessage(session *discordgo.Session, msg *discordgo.MessageCreate) {
 			"Failed to send you a DM. "+
 				"Did you disable DM in your privacy settings?",
 		)
+	}
+}
+
+func sendDm(session *discordgo.Session, channelId, msg string) {
+	_, err := session.ChannelMessageSend(
+		channelId,
+		msg,
+	)
+	if err != nil {
+		fmt.Println("Error while sending DM:", err)
+		fmt.Println("Intended message:", msg)
 	}
 }
