@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bwmarrin/discordgo"
 	"github.com/google/uuid"
 )
 
@@ -133,7 +134,7 @@ func timeStringFromFileName(fileName string) (string, error) {
 	return stringSlice[0], nil
 }
 
-func sendFileContentsAsDiscordMessage(fileName string, messagesSent chan bool, messagesErrored chan bool, wg *sync.WaitGroup) {
+func sendFileContentsAsDiscordMessage(fileName string, messagesSent chan bool, messagesErrored chan bool, wg *sync.WaitGroup, session *discordgo.Session) {
 	defer wg.Done()
 
 	fileFullPath := filepath.Join(sendFileDir, fileName)
@@ -145,8 +146,19 @@ func sendFileContentsAsDiscordMessage(fileName string, messagesSent chan bool, m
 		return
 	}
 
-	// TODO - send message to Discord
-	fmt.Println("Message:", message)
+	// TODO - What's the channel ID for our general chat?
+	channel, err := session.Channel(generalChannelId)
+
+	// Send the message to general chat
+	_, err = session.ChannelMessageSend(channel.ID, message)
+	if err != nil {
+		// send DM
+		fmt.Println("Error sending scheduled message:", err)
+		messagesErrored <- true
+		return
+	}
+
+	// Otherwise, message was successful, so we can clean up.
 	messagesSent <- true
 
 	err = os.Remove(fileFullPath)
