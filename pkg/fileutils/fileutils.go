@@ -13,6 +13,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/google/uuid"
+	"github.com/lightningandthunder/sendlater/pkg/discordutils"
 )
 
 const timeFormat = time.RFC3339
@@ -48,7 +49,7 @@ func ScheduleMessage(sendTime time.Time, message string) error {
 
 // Review and send all scheduled messages whose schedule timestamps are in the past.
 // Returns number of messages sent, number of failed messages, and the most recent internal error received.
-func SendPendingMessages() (filesSent int, filesErrored int, err error) {
+func SendPendingMessages(session *discordgo.Session) (filesSent int, filesErrored int, err error) {
 	files, err := ioutil.ReadDir(sendFileDir)
 	if err != nil {
 		return 0, 0, err
@@ -77,7 +78,7 @@ func SendPendingMessages() (filesSent int, filesErrored int, err error) {
 		// If scheduled time is in the past, fire off a goroutine to send the message to Discord
 		if t.Sub(nowUtc) < 0 {
 			wg.Add(1)
-			go sendFileContentsAsDiscordMessage(info.Name(), messagesSent, messagesErrored, &wg)
+			// go sendFileContentsAsDiscordMessage(info.Name(), messagesSent, messagesErrored, &wg)  //TODO - need more info
 		}
 
 	}
@@ -134,6 +135,9 @@ func timeStringFromFileName(fileName string) (string, error) {
 	return stringSlice[0], nil
 }
 
+// TODO - I should just pass in the entire message to be sent here,
+// and piece it together in a function beforehand.
+// That way I can reduce the number of arguments this function requires.
 func sendFileContentsAsDiscordMessage(fileName string, messagesSent chan bool, messagesErrored chan bool, wg *sync.WaitGroup, session *discordgo.Session) {
 	defer wg.Done()
 
@@ -146,11 +150,8 @@ func sendFileContentsAsDiscordMessage(fileName string, messagesSent chan bool, m
 		return
 	}
 
-	// TODO - What's the channel ID for our general chat?
-	channel, err := session.Channel(generalChannelId)
-
 	// Send the message to general chat
-	_, err = session.ChannelMessageSend(channel.ID, message)
+	_, err = session.ChannelMessageSend(discordutils.GetGeneralChannelID(), message)
 	if err != nil {
 		// send DM
 		fmt.Println("Error sending scheduled message:", err)

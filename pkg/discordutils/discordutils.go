@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/bwmarrin/discordgo"
-	"github.com/lightningandthunder/sendlater/pkg/fileutils"
+	"github.com/joho/godotenv"
 )
 
 // TODO: Need to figure out how to pass in the ScheduleMessage function here
@@ -18,8 +18,17 @@ import (
 const scheduleSignal = "signal"
 
 var discord *discordgo.Session
+var generalChatId string
 
 func init() {
+	// set General chat ID
+	err := godotenv.Load(".env")
+	if err != nil {
+		log.Fatalf("Failed while loading .env file:", err)
+	}
+
+	generalChatId = os.Getenv("GENERAL_CHAT_ID")
+
 	d, err := discordgo.New("Bot " + "authentication token")
 	if err != nil {
 		log.Fatal("error creating Discord session,", err)
@@ -34,8 +43,11 @@ func init() {
 
 // A "constant" representing the channel ID for General Chat on our server
 func GetGeneralChannelID() string {
-	// Need to read this in from .env
-	return "TODO"
+	return generalChatId
+}
+
+func GetDiscordSession() *discordgo.Session {
+	return discord
 }
 
 // Open a websocket connection to Discord and listen until an interrupt signal is received
@@ -73,7 +85,8 @@ func SendDm(channelId, msg string) {
 // This function will be called every time a DM is sent to the bot.
 // It parses the original message for key information and schedules the message for
 // a provided timestamp.
-func handleMessage(session *discordgo.Session, msg *discordgo.MessageCreate) {
+// A callback needs to be passed in to avoid circular imports with the discordutils package.
+func handleMessage(session *discordgo.Session, msg *discordgo.MessageCreate, callback func(time.Time, string) error) {
 	// Ignore this bot's messages - not that this is likely to happen, but still.
 	if msg.Author.ID == session.State.User.ID {
 		fmt.Println("Somehow, the bot sent a message to itself:", msg.Content)
@@ -111,7 +124,7 @@ messageLoop:
 		}
 	}
 
-	err := fileutils.ScheduleMessage(scheduleTime, parsedMessage)
+	err := callback(scheduleTime, parsedMessage)
 	if err != nil {
 		SendDm(
 			msg.ChannelID,
@@ -119,19 +132,4 @@ messageLoop:
 		)
 		return
 	}
-
-	// TODO - What's the channel ID for our general chat?
-	channel, err := session.Channel(GetGeneralChannelID())
-
-	if err != nil {
-		// If an error occurred, try to notify the user via DM.
-		// It's possible that we have sent too many DMs and Discord is throttling us.
-		SendDm(
-			msg.ChannelID,
-			fmt.Sprintf("Error while trying to send your message: %s."+
-				"It's possible that we're just overloading Discord; try again later.", err),
-		)
-		return
-	}
-
 }
