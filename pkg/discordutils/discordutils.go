@@ -2,7 +2,6 @@ package discordutils
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"strings"
@@ -13,26 +12,28 @@ import (
 	"github.com/joho/godotenv"
 )
 
-// TODO: Need to figure out how to pass in the ScheduleMessage function here
-
 const scheduleSignal = "signal"
 
 var discord *discordgo.Session
 var generalChatId string
+var callbackHandler func(time.Time, string) error
 
 func init() {
 	// set General chat ID
 	err := godotenv.Load(".env")
 	if err != nil {
-		log.Fatalf("Failed while loading .env file:", err)
+		fmt.Println("Failed while loading .env file:", err)
+		dir, _ := os.Getwd()
+		fmt.Println("Current directory:", dir)
+		os.Exit(1)
 	}
 
 	generalChatId = os.Getenv("GENERAL_CHAT_ID")
 
-	d, err := discordgo.New("Bot " + "authentication token")
+	d, err := discordgo.New("Bot" + os.Getenv("BOT_TOKEN"))
 	if err != nil {
-		log.Fatal("error creating Discord session,", err)
-		return
+		fmt.Println("error creating Discord session,", err)
+		os.Exit(1)
 	}
 	discord = d
 
@@ -46,12 +47,24 @@ func GetGeneralChannelID() string {
 	return generalChatId
 }
 
+// Return a discord session struct
 func GetDiscordSession() *discordgo.Session {
 	return discord
 }
 
+// Set a package-level handler function to be invoked upon DMing the bot
+func SetCallbackHandler(callback func(time.Time, string) error) {
+	if callbackHandler == nil {
+		callbackHandler = callback
+	}
+}
+
 // Open a websocket connection to Discord and listen until an interrupt signal is received
 func Listen() error {
+	if callbackHandler == nil {
+		return fmt.Errorf("DM callback handler function not set")
+	}
+
 	// Open a websocket connection to Discord and begin listening.
 	err := discord.Open()
 	if err != nil {
@@ -85,8 +98,8 @@ func SendDm(channelId, msg string) {
 // This function will be called every time a DM is sent to the bot.
 // It parses the original message for key information and schedules the message for
 // a provided timestamp.
-// A callback needs to be passed in to avoid circular imports with the discordutils package.
-func handleMessage(session *discordgo.Session, msg *discordgo.MessageCreate, callback func(time.Time, string) error) {
+// A package-level callback needs to be passed in to avoid circular imports with the discordutils package.
+func handleMessage(session *discordgo.Session, msg *discordgo.MessageCreate) {
 	// Ignore this bot's messages - not that this is likely to happen, but still.
 	if msg.Author.ID == session.State.User.ID {
 		fmt.Println("Somehow, the bot sent a message to itself:", msg.Content)
@@ -124,7 +137,8 @@ messageLoop:
 		}
 	}
 
-	err := callback(scheduleTime, parsedMessage)
+	// This callback function has to be set at the package level
+	err := callbackHandler(scheduleTime, parsedMessage)
 	if err != nil {
 		SendDm(
 			msg.ChannelID,

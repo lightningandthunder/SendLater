@@ -78,7 +78,7 @@ func SendPendingMessages(session *discordgo.Session) (filesSent int, filesErrore
 		// If scheduled time is in the past, fire off a goroutine to send the message to Discord
 		if t.Sub(nowUtc) < 0 {
 			wg.Add(1)
-			// go sendFileContentsAsDiscordMessage(info.Name(), messagesSent, messagesErrored, &wg)  //TODO - need more info
+			go sendFileContentsAsDiscordMessage(info.Name(), messagesSent, messagesErrored, &wg, session)
 		}
 
 	}
