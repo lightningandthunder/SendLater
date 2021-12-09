@@ -87,7 +87,6 @@ func Listen() error {
 
 // Send a DM to a provided channel ID
 func sendDm(userId, msg string) {
-
 	dmChannel, err := discord.UserChannelCreate(userId)
 	if err != nil {
 		fmt.Println("Error while getting DM channel:", err)
@@ -108,12 +107,11 @@ func sendDm(userId, msg string) {
 // This function will be called every time a DM is sent to the bot.
 // It parses the original message for key information and schedules the message for
 // a provided timestamp.
-// A package-level callback needs to be passed in to avoid circular imports with the discordutils package.
+// A package-level callback needs to be referenced to avoid circular imports with the discordutils package.
 func handleMessage(session *discordgo.Session, msg *discordgo.MessageCreate) {
 	fmt.Println(msg.Author.ID)
-	// Ignore this bot's messages - not that this is likely to happen, but still.
+	// Ignore this bot's messages
 	if msg.Author.ID == session.State.User.ID {
-		fmt.Println("Somehow, the bot sent a message to itself:", msg.Content)
 		return
 	}
 
@@ -135,8 +133,7 @@ messageLoop:
 		// Try to parse a date and time
 		case 1:
 			t, err := time.Parse(time.RFC3339, str)
-			fmt.Println("Parsed time:", t)
-			fmt.Println("Err from parsing time:", err)
+
 			if err != nil {
 				sendDm(
 					msg.Author.ID,
@@ -147,7 +144,8 @@ messageLoop:
 			}
 			scheduleTime = t
 		default:
-			parsedMessage = strings.Join(messageParts[2:], " ")
+			msgSliceWithAttribution := append([]string{msg.Author.Username + " scheduled a message to say: "}, messageParts[2:]...)
+			parsedMessage = strings.Join(msgSliceWithAttribution, " ")
 			break messageLoop
 		}
 	}

@@ -10,11 +10,28 @@ import (
 )
 
 func loopOnSendPendingMessages(session *discordgo.Session) {
+	elapsedSeconds := 0
+	totalFilesSent := 0
+	totalFilesErrored := 0
+
 	// TODO - make this listen on a channel and terminate the infinite loop once a kill signal is received
 	for {
 		filesSent, filesErrored, err := fileutils.SendPendingMessages(session)
-		fmt.Println("Main:", filesSent, filesErrored, err)
-		time.Sleep(time.Minute)
+		totalFilesSent += filesSent
+		totalFilesErrored += filesErrored
+		if err != nil {
+			fmt.Println("Error while catching up on scheduled messages:", err)
+		}
+		elapsedSeconds += 10
+		if elapsedSeconds == 60 {
+			fmt.Printf(
+				"%v messages sent successfully and %v messages errored out in the last %v seconds\n",
+				totalFilesSent, totalFilesErrored, elapsedSeconds,
+			)
+			elapsedSeconds, totalFilesSent, totalFilesErrored = 0, 0, 0
+		}
+
+		time.Sleep(time.Second * 10)
 	}
 }
 
