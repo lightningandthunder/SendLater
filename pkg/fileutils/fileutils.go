@@ -91,8 +91,9 @@ func SendPendingMessages(session *discordgo.Session) (filesSent int, filesErrore
 func readMessageFromFile(fileName string) (string, error) {
 	file, err := os.Open(fileName)
 	if err != nil {
-		fmt.Println("Error reading file: ", err)
+		return "", err
 	}
+
 	defer file.Close()
 
 	reader := bufio.NewReader(file)
@@ -145,7 +146,7 @@ func sendFileContentsAsDiscordMessage(fileName string, messagesSent chan bool, m
 
 	message, err := readMessageFromFile(fileFullPath)
 	if err != nil {
-		fmt.Println("Got an error in goroutine:", err)
+		fmt.Println("Error reading from file:", err)
 		messagesErrored <- true
 		return
 	}

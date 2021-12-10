@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"regexp"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -85,7 +87,7 @@ func Listen() error {
 	return nil
 }
 
-// Send a DM to a provided channel ID
+// Send a DM to a provided user ID
 func sendDm(userId, msg string) {
 	dmChannel, err := discord.UserChannelCreate(userId)
 	if err != nil {
@@ -93,7 +95,6 @@ func sendDm(userId, msg string) {
 		return
 	}
 
-	fmt.Println("Sending a DM to:", userId)
 	_, err = discord.ChannelMessageSend(
 		dmChannel.ID,
 		msg,
@@ -104,59 +105,129 @@ func sendDm(userId, msg string) {
 	}
 }
 
+func sendHelpDm(userId string) {
+	message := `
+To schedule a message in X seconds, minutes, or hours, DM the bot in this format:
+schedule <X seconds/minutes/hours> <message>
+
+Or to schedule a message at a specific time:
+schedule <RC3339 timestamp in the format yyyy-mm-ddThh:mm:ss.mm-gmt_offset> <message> 
+where gmt_offset is a GMT offset, such as +07:00 or -05:00
+`
+	sendDm(userId, message)
+}
+
+func getTargetTimeFromOffset(increment int, unit string) (time.Time, error) {
+	now := time.Now().UTC()
+
+	var _unit time.Duration
+	switch unit {
+	case "second":
+	case "seconds":
+		_unit = time.Second
+	case "minute":
+	case "minutes":
+		_unit = time.Minute
+	case "hour":
+	case "hours":
+		_unit = time.Hour
+	default:
+		return now, fmt.Errorf("Invalid time unit ", unit)
+	}
+
+	return now.Add(_unit * time.Duration(increment)), nil
+}
+
+// Extract a target time from the string elements of a message.
+// Return the target time, the first index after target time-related strings, and any errors that occurred.
+func extractTargetTimeFromMessage(messageParts []string) (time.Time, int, error) {
+	now := time.Now().UTC()
+
+	// Try to parse a "(int) seconds/minutes/hours" format string
+	matched, err := regexp.MatchString(`\d+ (seconds?|minutes?|hours?)`, strings.Join(messageParts[1:3], " "))
+	if err != nil {
+		return now, 0, err
+	}
+
+	// Try to schedule a message X seconds/minutes/hours from now
+	if matched {
+		intValue, err := strconv.Atoi(messageParts[1])
+		if err != nil {
+			return now, 0, err
+		}
+
+		targetTime, err := getTargetTimeFromOffset(intValue, messageParts[2])
+		if err != nil {
+			return now, 0, err
+		}
+		return targetTime, 3, nil
+	}
+	// Otherwise, parse an exact time
+	t, err := time.Parse(time.RFC3339, messageParts[1])
+	if err != nil {
+		return now, 0, err
+	}
+	return t, 2, nil
+
+}
+
 // This function will be called every time a DM is sent to the bot.
 // It parses the original message for key information and schedules the message for
 // a provided timestamp.
 // A package-level callback needs to be referenced to avoid circular imports with the discordutils package.
 func handleMessage(session *discordgo.Session, msg *discordgo.MessageCreate) {
-	fmt.Println(msg.Author.ID)
 	// Ignore this bot's messages
 	if msg.Author.ID == session.State.User.ID {
 		return
 	}
 
-	var scheduleTime time.Time
-	var parsedMessage string
-
 	messageParts := strings.Split(msg.Content, " ")
 
-	fmt.Println(messageParts)
-
-messageLoop:
-	for index, str := range messageParts {
-		switch index {
-		// Skip messages that don't start with the signal
-		case 0:
-			if strings.ToLower(str) != scheduleSignal {
-				return
-			}
-		// Try to parse a date and time
-		case 1:
-			t, err := time.Parse(time.RFC3339, str)
-
-			if err != nil {
-				sendDm(
-					msg.Author.ID,
-					fmt.Sprintf("Error parsing your timestamp: %s", err)+
-						"\nPlease use RFC3339 date format; ex: 2019-10-12T14:20:50.52+07:00",
-				)
-				return
-			}
-			scheduleTime = t
-		default:
-			msgSliceWithAttribution := append([]string{msg.Author.Username + " scheduled a message to say: "}, messageParts[2:]...)
-			parsedMessage = strings.Join(msgSliceWithAttribution, " ")
-			break messageLoop
-		}
+	// If the user asked for help, just send them a help message
+	if strings.ToLower(messageParts[0]) == "help" {
+		sendHelpDm(msg.Author.ID)
+		return
 	}
 
-	// This callback function has to be set at the package level
-	err := callbackHandler(scheduleTime, parsedMessage)
+	// If the user sent something else not starting with "schedule" or "help"; ignore it
+	if strings.ToLower(messageParts[0]) != scheduleSignal {
+		return
+	}
+
+	// Otherwise, strip out and calculate target time from the message
+	targetTime, messageStartIndex, err := extractTargetTimeFromMessage(messageParts)
 	if err != nil {
 		sendDm(
 			msg.Author.ID,
 			fmt.Sprintf("Error scheduling your message: %s", err),
 		)
 		return
+	}
+
+	// Prepend the message with some boilerpplate
+	msgSliceWithAttribution := append(
+		[]string{msg.Author.Username + " scheduled a message to say: "},
+		messageParts[messageStartIndex:]...,
+	)
+	parsedMessage := strings.Join(msgSliceWithAttribution, " ")
+
+	// This callback function to schedule the message has to be dependency-injected at the package level
+	err = callbackHandler(targetTime, parsedMessage)
+	if err != nil {
+		sendDm(
+			msg.Author.ID,
+			fmt.Sprintf("Error scheduling your message: %s", err),
+		)
+	}
+
+	// Try to add a thumbs-up emoji to the message if everything went well
+	userDmChannel, err := discord.UserChannelCreate(msg.Author.ID)
+	if err != nil {
+		fmt.Println("Couldn't react to a message:", err)
+	}
+
+	err = discord.MessageReactionAdd(userDmChannel.ID, msg.ID, "👍")
+	if err != nil {
+		fmt.Println("Error adding emoji:", err)
 	}
 }
