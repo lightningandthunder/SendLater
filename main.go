@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/bwmarrin/discordgo"
+	"github.com/lightningandthunder/sendlater/pkg/config"
 	"github.com/lightningandthunder/sendlater/pkg/discordutils"
 	"github.com/lightningandthunder/sendlater/pkg/fileutils"
 )
@@ -22,8 +23,8 @@ func loopOnSendPendingMessages(session *discordgo.Session) {
 		if err != nil {
 			fmt.Println("Error while catching up on scheduled messages:", err)
 		}
-		elapsedSeconds += 10
-		if elapsedSeconds == 60 {
+		elapsedSeconds += config.LoopWaitSeconds
+		if elapsedSeconds >= config.HeartbeatSeconds {
 			fmt.Printf(
 				"%v messages sent successfully and %v messages errored out in the last %v seconds\n",
 				totalFilesSent, totalFilesErrored, elapsedSeconds,
@@ -31,7 +32,7 @@ func loopOnSendPendingMessages(session *discordgo.Session) {
 			elapsedSeconds, totalFilesSent, totalFilesErrored = 0, 0, 0
 		}
 
-		time.Sleep(time.Second * 10)
+		time.Sleep(time.Second * config.LoopWaitSeconds)
 	}
 }
 
