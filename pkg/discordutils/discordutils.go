@@ -64,6 +64,7 @@ func SendDm(userId, msg string) {
 	}
 }
 
+// Take a message and send it to our server's General Chat channel.
 func SendMessageToGeneralChat(message string) error {
 	_, err := discord.ChannelMessageSend(generalChatId, message)
 	if err != nil {
@@ -114,6 +115,7 @@ func Listen() error {
 	return nil
 }
 
+// Send an explanation for how to use this bot to a given userID.
 func sendHelpDm(userId string) {
 	message := `
 To schedule a message in X seconds, minutes, or hours, DM the bot in this format:
@@ -126,6 +128,8 @@ where gmt_offset is a GMT offset, such as +07:00 or -05:00
 	SendDm(userId, message)
 }
 
+// Get an UTC time from an offset such as "10 minutes."
+// Returns a time.Time struct and any errors.
 func getTargetTimeFromOffset(increment int, unit string) (time.Time, error) {
 	now := time.Now().UTC()
 

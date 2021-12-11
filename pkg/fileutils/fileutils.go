@@ -93,6 +93,8 @@ func SendPendingMessages(session *discordgo.Session) (filesSent int, filesErrore
 	return len(messagesSent), len(messagesErrored), err
 }
 
+// Open a selected file in the sendfiles directory.
+// Returns file contents and error, if any.
 func readMessageFromFile(fileName string) (string, error) {
 	file, err := os.Open(fileName)
 	if err != nil {
@@ -111,14 +113,17 @@ func readMessageFromFile(fileName string) (string, error) {
 	return string(bytes), nil
 }
 
+// Parse a string to a time.Time struct.
 func stringToTime(s string) (time.Time, error) {
 	return time.Parse(timeFormat, s)
 }
 
+// Encode a parsable time string and user ID in a file name.
 func timeAndUserIdToFileName(timeString, userId string) string {
 	return timeString + "_" + userId + "_.txt"
 }
 
+// Extract a time.Time struct and user ID from a file name.
 func timeAndUserIdFromFileName(fileName string) (time.Time, string, error) {
 	stringSlice := strings.Split(fileName, "_")
 
