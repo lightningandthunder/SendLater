@@ -18,7 +18,7 @@ const scheduleSignal = "schedule"
 
 var discord *discordgo.Session
 var generalChatId string
-var callbackHandler func(time.Time, string) error
+var callbackHandler func(time.Time, string, string) error
 
 func init() {
 	// set General chat ID
@@ -46,6 +46,32 @@ func init() {
 	fmt.Println("Discord session initialized.")
 }
 
+// Send a DM to a provided user ID
+func SendDm(userId, msg string) {
+	dmChannel, err := discord.UserChannelCreate(userId)
+	if err != nil {
+		fmt.Println("Error while getting DM channel:", err)
+		return
+	}
+
+	_, err = discord.ChannelMessageSend(
+		dmChannel.ID,
+		msg,
+	)
+	if err != nil {
+		fmt.Println("Error while sending DM:", err)
+		fmt.Println("Intended message:", msg)
+	}
+}
+
+func SendMessageToGeneralChat(message string) error {
+	_, err := discord.ChannelMessageSend(generalChatId, message)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 // A "constant" representing the channel ID for General Chat on our server
 func GetGeneralChannelID() string {
 	return generalChatId
@@ -57,7 +83,7 @@ func GetDiscordSession() *discordgo.Session {
 }
 
 // Set a package-level handler function to be invoked upon DMing the bot
-func SetCallbackHandler(callback func(time.Time, string) error) {
+func SetCallbackHandler(callback func(time.Time, string, string) error) {
 	if callbackHandler == nil {
 		callbackHandler = callback
 	}
@@ -75,34 +101,17 @@ func Listen() error {
 		return err
 	}
 
+	signalChannel := make(chan os.Signal, 1)
+	signal.Notify(signalChannel, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
+
 	// Wait here until a system interrupt
 	fmt.Println("Bot is up and running!")
-	sc := make(chan os.Signal, 1)
-	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
-	<-sc
+	<-signalChannel
 
-	fmt.Println("Terminating bot.")
+	fmt.Println("\nTerminating bot.")
 	discord.Close()
 
 	return nil
-}
-
-// Send a DM to a provided user ID
-func sendDm(userId, msg string) {
-	dmChannel, err := discord.UserChannelCreate(userId)
-	if err != nil {
-		fmt.Println("Error while getting DM channel:", err)
-		return
-	}
-
-	_, err = discord.ChannelMessageSend(
-		dmChannel.ID,
-		msg,
-	)
-	if err != nil {
-		fmt.Println("Error while sending DM:", err)
-		fmt.Println("Intended message:", msg)
-	}
 }
 
 func sendHelpDm(userId string) {
@@ -114,7 +123,7 @@ Or to schedule a message at a specific time:
 schedule <RC3339 timestamp in the format yyyy-mm-ddThh:mm:ss.mm-gmt_offset> <message> 
 where gmt_offset is a GMT offset, such as +07:00 or -05:00
 `
-	sendDm(userId, message)
+	SendDm(userId, message)
 }
 
 func getTargetTimeFromOffset(increment int, unit string) (time.Time, error) {
@@ -197,14 +206,14 @@ func handleMessage(session *discordgo.Session, msg *discordgo.MessageCreate) {
 	// Otherwise, strip out and calculate target time from the message
 	targetTime, messageStartIndex, err := extractTargetTimeFromMessage(messageParts)
 	if err != nil {
-		sendDm(
+		SendDm(
 			msg.Author.ID,
 			fmt.Sprintf("Error scheduling your message: %s", err),
 		)
 		return
 	}
 
-	// Prepend the message with some boilerpplate
+	// Prepend the message with some boilerplate
 	msgSliceWithAttribution := append(
 		[]string{msg.Author.Username + " scheduled a message to say: "},
 		messageParts[messageStartIndex:]...,
@@ -212,9 +221,9 @@ func handleMessage(session *discordgo.Session, msg *discordgo.MessageCreate) {
 	parsedMessage := strings.Join(msgSliceWithAttribution, " ")
 
 	// This callback function to schedule the message has to be dependency-injected at the package level
-	err = callbackHandler(targetTime, parsedMessage)
+	err = callbackHandler(targetTime, parsedMessage, msg.Author.ID)
 	if err != nil {
-		sendDm(
+		SendDm(
 			msg.Author.ID,
 			fmt.Sprintf("Error scheduling your message: %s", err),
 		)

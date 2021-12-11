@@ -14,8 +14,6 @@ func loopOnSendPendingMessages(session *discordgo.Session) {
 	elapsedSeconds := 0
 	totalFilesSent := 0
 	totalFilesErrored := 0
-
-	// TODO - make this listen on a channel and terminate the infinite loop once a kill signal is received
 	for {
 		filesSent, filesErrored, err := fileutils.SendPendingMessages(session)
 		totalFilesSent += filesSent
@@ -31,13 +29,13 @@ func loopOnSendPendingMessages(session *discordgo.Session) {
 			)
 			elapsedSeconds, totalFilesSent, totalFilesErrored = 0, 0, 0
 		}
-
 		time.Sleep(time.Second * config.LoopWaitSeconds)
 	}
 }
 
 func main() {
 	discordutils.SetCallbackHandler(fileutils.ScheduleMessage)
+	fileutils.SetErrorDmCallback(discordutils.SendDm)
 	session := discordutils.GetDiscordSession()
 
 	// Loop forever on sending pending messages in a separate goroutine

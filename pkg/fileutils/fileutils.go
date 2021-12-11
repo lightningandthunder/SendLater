@@ -12,12 +12,13 @@ import (
 	"time"
 
 	"github.com/bwmarrin/discordgo"
-	"github.com/google/uuid"
 	"github.com/lightningandthunder/sendlater/pkg/discordutils"
 )
 
 const timeFormat = time.RFC3339
 const sendFileDir = "sendfiles"
+
+var sendErrorDm func(string, string)
 
 func init() {
 	err := os.MkdirAll(sendFileDir, os.ModePerm)
@@ -26,12 +27,16 @@ func init() {
 	}
 }
 
+// Dependency-inject a function to send a DM to a user in the event of an error
+func SetErrorDmCallback(f func(string, string)) {
+	sendErrorDm = f
+}
+
 // Record a desired send timestamp and a message to send.
 // Returns an error if something went wrong, or nil if it went right.
-func ScheduleMessage(sendTime time.Time, message string) error {
-	// Todo - see if we can get local time from discord message
+func ScheduleMessage(sendTime time.Time, message string, userID string) error {
 	sendTimeUtc := sendTime.UTC()
-	fileName := timeStringToFileName(sendTimeUtc.Format(timeFormat))
+	fileName := timeAndUserIdToFileName(sendTimeUtc.Format(timeFormat), userID)
 
 	fp, err := os.Create(filepath.Join(sendFileDir, fileName))
 	if err != nil {
@@ -68,7 +73,7 @@ func SendPendingMessages(session *discordgo.Session) (filesSent int, filesErrore
 	nowUtc := time.Now().UTC()
 
 	for _, info := range files {
-		t, err := timeFromFileName(info.Name())
+		t, userId, err := timeAndUserIdFromFileName(info.Name())
 		if err != nil {
 			fmt.Println("Error while parsing time from file name:", err)
 			messagesErrored <- true
@@ -78,7 +83,7 @@ func SendPendingMessages(session *discordgo.Session) (filesSent int, filesErrore
 		// If scheduled time is in the past, fire off a goroutine to send the message to Discord
 		if t.Sub(nowUtc) < 0 {
 			wg.Add(1)
-			go sendFileContentsAsDiscordMessage(info.Name(), messagesSent, messagesErrored, &wg, session)
+			go sendFileContentsAsDiscordMessage(info.Name(), userId, messagesSent, messagesErrored, &wg)
 		}
 
 	}
@@ -110,36 +115,29 @@ func stringToTime(s string) (time.Time, error) {
 	return time.Parse(timeFormat, s)
 }
 
-func timeStringToFileName(s string) string {
-	return s + "_" + uuid.New().String() + ".txt"
+func timeAndUserIdToFileName(timeString, userId string) string {
+	return timeString + "_" + userId + "_.txt"
 }
 
-func timeFromFileName(fileName string) (time.Time, error) {
-	timeString, err := timeStringFromFileName(fileName)
-	if err != nil {
-		return time.Time{}, err
+func timeAndUserIdFromFileName(fileName string) (time.Time, string, error) {
+	stringSlice := strings.Split(fileName, "_")
+
+	// We expect the string to split into target_time, user_id, and ".txt"
+	if len(stringSlice) != 3 {
+		return time.Now(), "", fmt.Errorf("Invalid file name:" + fileName)
 	}
+	timeString, userId := stringSlice[0], stringSlice[1]
 
 	timeStruct, err := stringToTime(timeString)
 	if err != nil {
-		return time.Time{}, err
+		return time.Time{}, userId, err
 	}
 
-	return timeStruct, nil
+	return timeStruct, userId, nil
 }
 
-func timeStringFromFileName(fileName string) (string, error) {
-	stringSlice := strings.Split(fileName, "_")
-	if len(stringSlice) != 2 {
-		return "", fmt.Errorf("Invalid file name:" + fileName)
-	}
-	return stringSlice[0], nil
-}
-
-// TODO - I should just pass in the entire message to be sent here,
-// and piece it together in a function beforehand.
-// That way I can reduce the number of arguments this function requires.
-func sendFileContentsAsDiscordMessage(fileName string, messagesSent chan bool, messagesErrored chan bool, wg *sync.WaitGroup, session *discordgo.Session) {
+// Read a scheduled message from a file and send it to General Chat
+func sendFileContentsAsDiscordMessage(fileName string, userId string, messagesSent chan bool, messagesErrored chan bool, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	fileFullPath := filepath.Join(sendFileDir, fileName)
@@ -151,10 +149,12 @@ func sendFileContentsAsDiscordMessage(fileName string, messagesSent chan bool, m
 		return
 	}
 
+	fmt.Println("Sending error to ", userId)
 	// Send the message to general chat
-	_, err = session.ChannelMessageSend(discordutils.GetGeneralChannelID(), message)
+	err = discordutils.SendMessageToGeneralChat(message)
 	if err != nil {
-		// send DM
+		errorMsg := fmt.Errorf("There was an error sending your scheduled message:", err)
+		sendErrorDm(userId, errorMsg.Error())
 		fmt.Println("Error sending scheduled message:", err)
 		messagesErrored <- true
 		return
