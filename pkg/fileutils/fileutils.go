@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bwmarrin/discordgo"
 	"github.com/lightningandthunder/sendlater/pkg/discordutils"
 )
 
@@ -54,7 +53,7 @@ func ScheduleMessage(sendTime time.Time, message string, userID string) error {
 
 // Review and send all scheduled messages whose schedule timestamps are in the past.
 // Returns number of messages sent, number of failed messages, and the most recent internal error received.
-func SendPendingMessages(session *discordgo.Session) (filesSent int, filesErrored int, err error) {
+func SendPendingMessages(session discordutils.DiscordAdapter) (filesSent int, filesErrored int, err error) {
 	files, err := ioutil.ReadDir(sendFileDir)
 	if err != nil {
 		return 0, 0, err
@@ -123,7 +122,7 @@ func timeAndUserIdToFileName(timeString, userId string) string {
 	return timeString + "_" + userId + "_.txt"
 }
 
-// Extract a time.Time struct and user ID from a file name.
+// Extract a time.Time struct and user ID from a file
 func timeAndUserIdFromFileName(fileName string) (time.Time, string, error) {
 	stringSlice := strings.Split(fileName, "_")
 
@@ -158,7 +157,7 @@ func sendFileContentsAsDiscordMessage(fileName string, userId string, messagesSe
 	// Send the message to general chat
 	err = discordutils.SendMessageToGeneralChat(message)
 	if err != nil {
-		errorMsg := fmt.Errorf("There was an error sending your scheduled message:", err)
+		errorMsg := fmt.Errorf("There was an error sending your scheduled message: %v", err)
 		sendErrorDm(userId, errorMsg.Error())
 		fmt.Println("Error sending scheduled message:", err)
 		messagesErrored <- true

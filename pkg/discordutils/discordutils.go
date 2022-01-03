@@ -1,6 +1,7 @@
 package discordutils
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -16,12 +17,12 @@ import (
 
 const scheduleSignal = "schedule"
 
-var discord *discordgo.Session
+var discord DiscordAdapter
 var generalChatId string
 var callbackHandler func(time.Time, string, string) error
 
 func init() {
-	// set General chat ID
+	// set General chat IDƒ
 	err := godotenv.Load(".env")
 	if err != nil {
 		fmt.Println("Failed while loading .env file:", err)
@@ -32,16 +33,12 @@ func init() {
 
 	generalChatId = os.Getenv("GENERAL_CHAT_ID")
 
-	d, err := discordgo.New("Bot " + os.Getenv("BOT_TOKEN"))
+	discordSession, err := newDiscordAdapter(os.Getenv("BOT_TOKEN"))
 	if err != nil {
 		fmt.Println("error creating Discord session,", err)
 		os.Exit(1)
 	}
-	discord = d
-
-	// Register handler function specifically for DMs to the bot
-	discord.AddHandler(handleMessage)
-	discord.Identify.Intents = discordgo.IntentsDirectMessages
+	discord = discordSession
 
 	fmt.Println("Discord session initialized.")
 }
@@ -73,13 +70,11 @@ func SendMessageToGeneralChat(message string) error {
 	return nil
 }
 
-// A "constant" representing the channel ID for General Chat on our server
 func GetGeneralChannelID() string {
 	return generalChatId
 }
 
-// Return a discord session struct
-func GetDiscordSession() *discordgo.Session {
+func GetDiscordSession() DiscordAdapter {
 	return discord
 }
 
@@ -93,7 +88,7 @@ func SetCallbackHandler(callback func(time.Time, string, string) error) {
 // Open a websocket connection to Discord and listen until an interrupt signal is received
 func Listen() error {
 	if callbackHandler == nil {
-		return fmt.Errorf("DM callback handler function not set")
+		return errors.New("DM callback handler function not set")
 	}
 
 	// Open a websocket connection to Discord and begin listening.
@@ -110,8 +105,7 @@ func Listen() error {
 	<-signalChannel
 
 	fmt.Println("\nTerminating bot.")
-	discord.Close()
-
+	_ = discord.Close()
 	return nil
 }
 
@@ -145,7 +139,7 @@ func getTargetTimeFromOffset(increment int, unit string) (time.Time, error) {
 	case "hours":
 		_unit = time.Hour
 	default:
-		return now, fmt.Errorf("Invalid time unit ", unit)
+		return now, fmt.Errorf("invalid time unit %v", unit)
 	}
 
 	return now.Add(_unit * time.Duration(increment)), nil

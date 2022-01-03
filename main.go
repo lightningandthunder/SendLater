@@ -4,13 +4,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/bwmarrin/discordgo"
 	"github.com/lightningandthunder/sendlater/pkg/config"
 	"github.com/lightningandthunder/sendlater/pkg/discordutils"
 	"github.com/lightningandthunder/sendlater/pkg/fileutils"
 )
 
-func loopOnSendPendingMessages(session *discordgo.Session) {
+func loopOnSendPendingMessages(session discordutils.DiscordAdapter) {
 	elapsedSeconds := 0
 	totalFilesSent := 0
 	totalFilesErrored := 0
