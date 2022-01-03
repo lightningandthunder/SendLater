@@ -1,8 +1,6 @@
 package discordutils
 
-import (
-	"github.com/bwmarrin/discordgo"
-)
+import "github.com/bwmarrin/discordgo"
 
 type discordChannel *discordgo.Channel
 type discordMessage *discordgo.Message
@@ -46,5 +44,4 @@ func newDiscordAdapter(botToken string) (DiscordAdapter, error) {
 	discordSession.AddHandler(handleMessage)
 	discordSession.Identify.Intents = discordgo.IntentsDirectMessages
 	return &discordWrapper{session: discordSession}, err
-
 }

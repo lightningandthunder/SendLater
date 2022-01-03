@@ -13,17 +13,20 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/joho/godotenv"
+	"github.com/lightningandthunder/sendlater/pkg/utils"
 )
 
 const scheduleSignal = "schedule"
 
+type CallbackHandler func(sendTime time.Time, message, userId string) error
+
 var discord DiscordAdapter
 var generalChatId string
-var callbackHandler func(time.Time, string, string) error
+var callbackHandler CallbackHandler
 
 func init() {
-	// set General chat IDƒ
-	err := godotenv.Load(".env")
+	// set General chat ID
+	err := godotenv.Load(utils.Join(utils.RootDir(), ".env"))
 	if err != nil {
 		fmt.Println("Failed while loading .env file:", err)
 		dir, _ := os.Getwd()
@@ -79,7 +82,7 @@ func GetDiscordSession() DiscordAdapter {
 }
 
 // Set a package-level handler function to be invoked upon DMing the bot
-func SetCallbackHandler(callback func(time.Time, string, string) error) {
+func SetCallbackHandler(callback CallbackHandler) {
 	if callbackHandler == nil {
 		callbackHandler = callback
 	}
